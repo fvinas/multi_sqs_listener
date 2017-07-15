@@ -167,4 +167,4 @@ class MultiSQSListener(object):
 
   @abstractmethod
   def handle_message(self, queue_name, bus_name, priority, sqs_message):
-  	pass
+    pass
