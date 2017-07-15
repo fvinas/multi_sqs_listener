@@ -98,7 +98,6 @@ class MultiSQSListener(object):
   def __init__(self, queues_configuration, **kwargs):
     self._poll_interval = kwargs['poll_interval'] if 'poll_interval' in kwargs else 60
     self._region_name = kwargs['region_name'] if 'region_name' in kwargs else 'eu-west-1'
-    self._force_delete = kwargs['force_delete'] if 'force_delete' in kwargs else False
     self._queues_configuration = queues_configuration
     self.outbound_buses = dict()
 
