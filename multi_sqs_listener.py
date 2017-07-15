@@ -19,7 +19,7 @@ class SQSListenerConfig(object):
     self.queue_url = ''
 
   def __repr__(self):
-  	return '(name={}, url={})'.format(self.queue_name, self.queue_url)
+    return '(name={}, url={})'.format(self.queue_name, self.queue_url)
 
 
 
@@ -138,22 +138,22 @@ class MultiSQSListener(object):
     # while the handler is dealing with a message
     try:
       while True:
-      	for bus_name, bus in self.outbound_buses.iteritems():
-      	  bus_size = bus.qsize()
-      	  print('Bus size {} == {}'.format(bus_name, bus.qsize()))
-      	  try:
-      	  	message = bus.get(block=False)
-      	  	handler_available_event.clear()
-      	  	try:
-      	  	  self.handle_message(message[1], bus_name, message[0], message[2])
-      	  	  # If handle message worked, then delete the message from SQS
-      	  	  message[2].delete()
-      	  	except Exception as ex:
-      	  	  # TODO: add another behaviour?
-      	  	  raise Exception(ex)
-      	  	handler_available_event.set()
-      	  except Empty:
-      	  	pass
+       for bus_name, bus in self.outbound_buses.iteritems():
+          bus_size = bus.qsize()
+          print('Bus size {} == {}'.format(bus_name, bus.qsize()))
+          try:
+            message = bus.get(block=False)
+            handler_available_event.clear()
+            try:
+              self.handle_message(message[1], bus_name, message[0], message[2])
+              # If handle message worked, then delete the message from SQS
+              message[2].delete()
+            except Exception as ex:
+              # TODO: add another behaviour?
+              raise Exception(ex)
+            handler_available_event.set()
+          except Empty:
+            pass
         time.sleep(0.5)
     except KeyboardInterrupt:
       # Queues threads are also asked to gracefully close
