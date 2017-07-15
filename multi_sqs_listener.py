@@ -137,7 +137,7 @@ class MultiSQSListener(object):
     # while the handler is dealing with a message
     try:
       while True:
-       for bus_name, bus in self.outbound_buses.iteritems():
+        for bus_name, bus in self.outbound_buses.iteritems():
           bus_size = bus.qsize()
           print('Bus size {} == {}'.format(bus_name, bus.qsize()))
           try:
@@ -153,7 +153,7 @@ class MultiSQSListener(object):
             handler_available_event.set()
           except Empty:
             pass
-        time.sleep(0.5)
+        time.sleep(0.1)
     except KeyboardInterrupt:
       # Queues threads are also asked to gracefully close
       run_event.clear()
