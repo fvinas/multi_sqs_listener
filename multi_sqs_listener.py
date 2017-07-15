@@ -119,7 +119,8 @@ class MultiSQSListener(object):
           self.outbound_buses[queue.bus_name],
           queue.priority_number,
           run_event,
-          handler_available_event
+          handler_available_event,
+          region_name=self._region_name
         )
       else:
         listener_thread = _ShortPollSQSListener(
@@ -128,7 +129,8 @@ class MultiSQSListener(object):
           self.outbound_buses[queue.bus_name],
           run_event,
           handler_available_event,
-          self._poll_interval
+          self._poll_interval,
+          region_name=self._region_name
         )
       listener_thread.start()
       threads.append(listener_thread)
