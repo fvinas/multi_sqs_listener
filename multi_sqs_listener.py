@@ -35,7 +35,6 @@ class _LongPollSQSListener(Thread):
     self._priority_number = priority_number
     self._handler_available_event = handler_available_event
     sqs = boto3.resource('sqs', region_name=self._region_name)
-    print("Queue: {}".format(self._queue_name))
     self._queue = sqs.get_queue_by_name(QueueName=self._queue_name)
     self._run_event = run_event
     print('Starting up thread {} and long-polling inbound queue {}'.format(self.thread_id, self._queue_name))
