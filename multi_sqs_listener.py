@@ -141,7 +141,6 @@ class MultiSQSListener(object):
       while True:
         for bus_name, bus in self.outbound_buses.iteritems():
           bus_size = bus.qsize()
-          print('Bus size {} == {}'.format(bus_name, bus.qsize()))
           try:
             message = bus.get(block=False)
             handler_available_event.clear()
