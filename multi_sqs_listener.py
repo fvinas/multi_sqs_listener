@@ -157,7 +157,6 @@ class MultiSQSListener(object):
             except Exception as ex:
               # TODO: add another behaviour?
               self._logger.error('Exception: unable to handle message', exc_info=True)
-              raise Exception(ex)
             handler_available_event.set()
           except Empty:
             pass
