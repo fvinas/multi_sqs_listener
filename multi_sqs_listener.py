@@ -151,10 +151,11 @@ class MultiSQSListener(object):
                             self.handle_message(message[1], bus_name, message[0], message[2])
                             # If handle message worked, then delete the message from SQS
                             message[2].delete()
-                            bus.task_done()
                         except Exception:
                             # TODO: add another behaviour?
                             self._logger.error('Exception: unable to handle message', exc_info=True)
+                        finally:
+                            bus.task_done()
                         handler_available_event.set()
                     except Empty:
                         pass
