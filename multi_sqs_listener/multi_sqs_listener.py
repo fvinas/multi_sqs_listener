@@ -1,21 +1,23 @@
-# -*- encoding: utf-8 -*-
+# -*- coding: utf-8 -*-
 
+# System
 import time
 import logging
-from threading import Thread, Event
+from threading import Event
 from Queue import PriorityQueue, Empty
 from abc import ABCMeta, abstractmethod
 
-
-import boto3
+# Project
+from .long_polling import _LongPollSQSListener
+from .short_polling import _ShortPollSQSListener
 
 
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 
 class SQSListenerConfig(object):
-    '''A class to store an individual queue configuration
-    '''
+    """A class to store an individual SQS listener configuration."""
+
     def __init__(self, queue_name, **kwargs):
         self.queue_name = queue_name
         self.priority_number = kwargs['priority_number'] if 'priority_number' in kwargs else 1
@@ -27,74 +29,9 @@ class SQSListenerConfig(object):
         return '(name={}, url={})'.format(self.queue_name, self.queue_url)
 
 
-class _LongPollSQSListener(Thread):
-    '''A SQS listener designed to work alone in a separate thread
-    '''
-    def __init__(self, thread_id, queue_name, outbound_bus, priority_number, run_event, handler_available_event, logger=None, **kwargs):
-        Thread.__init__(self, name=queue_name)
-        self._logger = logger or logging.getLogger(__name__)
-        self.thread_id = thread_id
-        self._region_name = kwargs['region_name'] if 'region_name' in kwargs else 'eu-west-1'
-        self._outbound_bus = outbound_bus
-        self._queue_name = queue_name
-        self._priority_number = priority_number
-        self._handler_available_event = handler_available_event
-        sqs = boto3.resource('sqs', region_name=self._region_name)
-        self._queue = sqs.get_queue_by_name(QueueName=self._queue_name)
-        self._run_event = run_event
-        self._logger.info('Starting up thread {} and long-polling inbound queue {}'.format(self.thread_id, self._queue_name))
-
-    def run(self):
-        self._logger.info('Long polling queue {}'.format(self._queue_name))
-        while True and self._run_event.is_set():
-            # TODO: make MaxNumberOfMessages customizable?
-            self._handler_available_event.wait()
-            self._outbound_bus.join()
-            messages = self._queue.receive_messages(MaxNumberOfMessages=1, WaitTimeSeconds=5)
-            if len(messages) > 0:
-                self._outbound_bus.join()
-                self._outbound_bus.put((self._priority_number, self._queue_name, messages[0]))
-
-    def stop(self):
-        self._logger.info('Thread {} stopped'.format(self.thread_id))
-        pass
-
-
-class _ShortPollSQSListener(Thread):
-    '''A SQS listener designed to work alone in a separate thread
-    '''
-    def __init__(self, thread_id, queue_name, outbound_bus, run_event, handler_available_event, poll_interval=10, logger=None, **kwargs):
-        Thread.__init__(self, name=queue_name)
-        self._logger = logger or logging.getLogger(__name__)
-        self.thread_id = thread_id
-        self._region_name = kwargs['region_name'] if 'region_name' in kwargs else 'eu-west-1'
-        self._outbound_bus = outbound_bus
-        self._queue_name = queue_name
-        self._poll_interval = poll_interval
-        self._handler_available_event = handler_available_event
-        sqs = boto3.resource('sqs', region_name=self._region_name)
-        self._queue = sqs.get_queue_by_name(QueueName=self._queue_name)
-        self._run_event = run_event
-        self._logger.info('Starting up thread {} and short-polling inbound queue {}'.format(self.thread_id, self._queue_name))
-
-    def run(self):
-        self._logger.info('Short polling queue {}'.format(self._queue_name))
-        while True and self._run_event.is_set():
-            self._handler_available_event.wait()
-            self._outbound_bus.join()
-            messages = self._queue.receive_messages(MaxNumberOfMessages=1)
-            if len(messages) > 0:
-                self._outbound_bus.join()
-                self._outbound_bus.put((1, self._queue_name, messages[0]))
-            else:
-                time.sleep(self._poll_interval)
-
-    def stop(self):
-        self._logger.info('Thread {} stopped'.format(self.thread_id))
-        pass
-
-
 class MultiSQSListener(object):
+    """Main class: instanciates the listeners."""
+
     __metaclass__ = ABCMeta
 
     def __init__(self, queues_configuration, logger=None, **kwargs):
@@ -114,7 +51,8 @@ class MultiSQSListener(object):
         for i, queue in enumerate(self._queues_configuration):
             if queue.bus_name not in self.outbound_buses:
                 self.outbound_buses[queue.bus_name] = PriorityQueue(maxsize=1)
-            self._logger.info('Launching listener for {} in thread {}, outbound bus {}, type {}'.format(queue.queue_name, i, queue.bus_name, queue.queue_type))
+            self._logger.debug('Launching listener for {} in thread {}, outbound bus {}, type {}'.format(queue.queue_name, i, queue.bus_name, queue.queue_type))
+
             if queue.queue_type == 'long-poll':
                 listener_thread = _LongPollSQSListener(
                     i,
@@ -167,7 +105,7 @@ class MultiSQSListener(object):
                 thread.join()
 
     def listen(self):
-        self._logger.info("Listening to all queues")
+        self._logger.info('Registering listeners on all queues')
         self._start_listeners()
 
     @abstractmethod
