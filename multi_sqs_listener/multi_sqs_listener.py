@@ -30,7 +30,7 @@ class SQSListenerConfig(object):
 
 
 class MultiSQSListener(object):
-    """Main class: instanciates the listeners."""
+    """Main class: instanciates the listeners and runs the main event loop."""
 
     __metaclass__ = ABCMeta
 
@@ -48,14 +48,17 @@ class MultiSQSListener(object):
         handler_available_event = Event()
         handler_available_event.set()
 
-        for i, queue in enumerate(self._queues_configuration):
+        for index, queue in enumerate(self._queues_configuration):
             if queue.bus_name not in self.outbound_buses:
                 self.outbound_buses[queue.bus_name] = PriorityQueue(maxsize=1)
-            self._logger.debug('Launching listener for {} in thread {}, outbound bus {}, type {}'.format(queue.queue_name, i, queue.bus_name, queue.queue_type))
+
+            self._logger.debug('Launching listener for {} in thread {}, outbound bus {}, type {}'.format(
+                queue.queue_name, index, queue.bus_name, queue.queue_type
+            ))
 
             if queue.queue_type == 'long-poll':
                 listener_thread = _LongPollSQSListener(
-                    i,
+                    index,
                     queue.queue_name,
                     self.outbound_buses[queue.bus_name],
                     queue.priority_number,
@@ -65,7 +68,7 @@ class MultiSQSListener(object):
                 )
             else:
                 listener_thread = _ShortPollSQSListener(
-                    i,
+                    index,
                     queue.queue_name,
                     self.outbound_buses[queue.bus_name],
                     run_event,
