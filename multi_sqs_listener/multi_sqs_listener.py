@@ -1,45 +1,32 @@
 # -*- coding: utf-8 -*-
 
+"""Main module of multi_sqs_listener."""
+
 # System
 import time
 import logging
 from threading import Event
-from Queue import PriorityQueue, Empty
+from Queue import Empty
 from abc import ABCMeta, abstractmethod
 
 # Project
-from .long_polling import _LongPollSQSListener
-from .short_polling import _ShortPollSQSListener
+from .config import EVENT_BUSES_REGISTER
+from ._long_polling import _LongPollSQSListener
+from ._short_polling import _ShortPollSQSListener
 
 
-logging.getLogger(__name__).addHandler(logging.NullHandler())
-
-
-class SQSListenerConfig(object):
-    """A class to store an individual SQS listener configuration."""
-
-    def __init__(self, queue_name, **kwargs):
-        self.queue_name = queue_name
-        self.priority_number = kwargs['priority_number'] if 'priority_number' in kwargs else 1
-        self.bus_name = kwargs['bus_name'] if 'bus_name' in kwargs else 'default-bus'
-        self.queue_type = kwargs['queue_type'] if 'queue_type' in kwargs else 'long-poll'
-        self.queue_url = ''
-
-    def __repr__(self):
-        return '(name={}, url={})'.format(self.queue_name, self.queue_url)
+logger = logging.getLogger(__name__)
 
 
 class MultiSQSListener(object):
-    """Main class: instanciates the listeners and runs the main event loop."""
+    """Main class: instanciates the listeners and runs the main event loop.
+    This abstract class must implement handle_message method to be instanciated.
+    """
 
     __metaclass__ = ABCMeta
 
-    def __init__(self, queues_configuration, logger=None, **kwargs):
-        self._logger = logger or logging.getLogger(__name__)
-        self._poll_interval = kwargs['poll_interval'] if 'poll_interval' in kwargs else 60
-        self._region_name = kwargs['region_name'] if 'region_name' in kwargs else 'eu-west-1'
+    def __init__(self, queues_configuration):
         self._queues_configuration = queues_configuration
-        self.outbound_buses = dict()
 
     def _start_listeners(self):
         threads = []
@@ -49,57 +36,62 @@ class MultiSQSListener(object):
         handler_available_event.set()
 
         for index, queue in enumerate(self._queues_configuration):
-            if queue.bus_name not in self.outbound_buses:
-                self.outbound_buses[queue.bus_name] = PriorityQueue(maxsize=1)
-
-            self._logger.debug('Launching listener for {} in thread {}, outbound bus {}, type {}'.format(
-                queue.queue_name, index, queue.bus_name, queue.queue_type
+            logger.debug('Launching listener for {} in thread {}, outbound bus {}, type {}'.format(
+                queue.queue_name, index, queue.bus.name, queue.queue_type
             ))
 
             if queue.queue_type == 'long-poll':
                 listener_thread = _LongPollSQSListener(
                     index,
                     queue.queue_name,
-                    self.outbound_buses[queue.bus_name],
-                    queue.priority_number,
+                    queue.bus.get(),
                     run_event,
                     handler_available_event,
-                    region_name=self._region_name
+                    region_name=queue.region_name
                 )
             else:
                 listener_thread = _ShortPollSQSListener(
                     index,
                     queue.queue_name,
-                    self.outbound_buses[queue.bus_name],
+                    queue.bus.get(),
                     run_event,
                     handler_available_event,
-                    self._poll_interval,
-                    region_name=self._region_name
+                    queue.poll_interval,
+                    region_name=queue.region_name
                 )
             listener_thread.start()
             threads.append(listener_thread)
 
-        # TODO: put mechanism in place so that the threads no longer add things to the queue
-        # while the handler is dealing with a message
+        # pylint: disable=too-many-nested-blocks
         try:
             while True:
-                for bus_name, bus in self.outbound_buses.iteritems():
+                for bus in EVENT_BUSES_REGISTER:
                     # bus_size = bus.qsize()
+                    a_message_was_processed = False
                     try:
-                        message = bus.get(block=False)
+                        message = bus.get().get(block=False)
                         handler_available_event.clear()
                         try:
-                            self.handle_message(message[1], bus_name, message[0], message[2])
+                            self.handle_message(message[0], bus.name, bus.priority, message[1])
+                            a_message_was_processed = True
                             # If handle message worked, then delete the message from SQS
-                            message[2].delete()
-                        except Exception:
-                            # TODO: add another behaviour?
-                            self._logger.error('Exception: unable to handle message', exc_info=True)
+                            message[1].delete()
+                        except Exception:  # pylint: disable=broad-except
+                            logger.error('Exception: unable to handle message', exc_info=True)
+                            # SQS message won't be deleted and will probably end up in a dead-letter queue
                         finally:
-                            bus.task_done()
+                            bus.get().task_done()
                         handler_available_event.set()
                     except Empty:
                         pass
+
+                    if a_message_was_processed:
+                        # If a message was processed, we break the for loop
+                        # so that we start it again via the while True
+                        # This will allow to start again to process the top priority buses first
+                        # (if any message is awaiting)
+                        break
+
                 time.sleep(0.1)
         except KeyboardInterrupt:
             # Queues threads are also asked to gracefully close
@@ -108,9 +100,11 @@ class MultiSQSListener(object):
                 thread.join()
 
     def listen(self):
-        self._logger.info('Registering listeners on all queues')
+        """Start listeners threads."""
+        logger.info('Registering listeners on all queues')
         self._start_listeners()
 
     @abstractmethod
     def handle_message(self, queue_name, bus_name, priority, sqs_message):
+        """Abstract method to be implemented: will take care of all messages received by the listeners."""
         pass

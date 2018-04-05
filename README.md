@@ -26,14 +26,17 @@ Quick example
 Here a very simple example of a worker waiting for messages coming from one SQS queue:
 
 ```python
-from multi_sqs_listener import SQSListenerConfig, MultiSQSListener
+from multi_sqs_listener import QueueConfig, EventBus, MultiSQSListener
 
 class MyListener(MultiSQSListener):
     def handle_message(self, queue, bus, priority, message):
         # This is were your actual event code would be
         print(message.body)
 
-my_queue = SQSListenerConfig('name-of-my-queue')  # multiple default values used here
+my_event_bus = EventBus()  # leaving default name & priority
+EventBus.register_buses([my_event_bus])
+
+my_queue = QueueConfig('name-of-my-queue', my_event_bus)  # multiple default values used here
 my_listener = MyListener([my_queue])
 my_listener.listen()
 ```
@@ -48,7 +51,7 @@ A common pattern when you have a pool of EC2 instances is to have a dedicated, t
 
 When you send a message to the SNS topic, it will then be broadcast to all SQS queues via AWS native mechanisms, then sending an event to all your servers.
 
-### Fast & slow lane
+### Handling fast & slow lanes
 
 Another common pattern is to deal with events with different priorities, processing first those with the highest priority.
 
@@ -62,7 +65,7 @@ Note that it does not interrupt any event being currently processed, but rather 
 # Assuming you have two SQS queues named 'low-priority-queue' and 'high-priority-queue'
 
 import time
-from multi_sqs_listener import SQSListenerConfig, MultiSQSListener
+from multi_sqs_listener import QueueConfig, EventBus, MultiSQSListener
 
 
 class MyListener(MultiSQSListener):
@@ -80,9 +83,14 @@ class MyListener(MultiSQSListener):
         else:
             self.low_priority_job(message.body)
 
-low_prioriy_queue = SQSListenerConfig('low-priority-queue', priority_number=1)
-high_prioriy_queue = SQSListenerConfig('high-priority-queue', priority_number=5, bus_name='high-priority-bus')
-my_listener = MyListener([low_prioriy_queue, high_prioriy_queue])
+low_priority_bus = EventBus('low-priority-bus', priority=1)
+high_priority_bus = EventBus('high-priority-bus', priority=5)
+EventBus.register_buses([low_priority_bus, high_priority_bus])
+
+
+low_prioriy_queue = QueueConfig('low-priority-queue', low_priority_bus)
+high_prioriy_queue = QueueConfig('high-priority-queue', high_priority_bus)
+my_listener = MyListener([low_priority_queue, high_priority_queue])
 my_listener.listen()
 ```
 
@@ -99,6 +107,7 @@ for job_index in range(5):
     low_q.send_message(MessageBody='Job #{} with no priority'.format(job_index))
 
 high_q.send_message(MessageBody='Priority message')
+high_q.send_message(MessageBody='Priority message')
 ```
 
 You would get an output close to this one, highlighting the fact that "priority message" has been prioritized by the worker over messages with low priority.
@@ -107,6 +116,8 @@ Starting low priority, long job: Job #0 with no priority
 Ended low priority job: Job #0 with no priority
 Starting low priority, long job: Job #4 with no priority
 Ended low priority job: Job #4 with no priority
+Starting high priority, quick job: Priority message
+Ended high priority job: Priority message
 Starting high priority, quick job: Priority message
 Ended high priority job: Priority message
 Starting low priority, long job: Job #1 with no priority
@@ -121,28 +132,108 @@ Ended low priority job: Job #3 with no priority
 
 In this common pattern, you have multiple queues, with different priorities, for work-related messages, plus another one for administrative messages (e.g. the server should update a model, it should reboot, …). This use case is thus a combination of the two cases described below: shared queues with multiple priorities and a queue dedicated to the current worker. 
 
+```python
+# Server code
+# Assuming you have:
+#  - two 'work' related SQS queues named 'low-priority-queue' and 'high-priority-queue'
+#  - one 'administrative-events-queue'
+
+import time
+from multi_sqs_listener import QueueConfig, EventBus, MultiSQSListener
+
+
+class MyListener(MultiSQSListener):
+    def job_event(self, message):
+        print('Starting job: {}'.format(message))
+        time.sleep(2)
+        print('Ended job: {}'.format(message))
+    def administrative_event(self, message):
+        print('Starting administrative event: {}'.format(message))
+        time.sleep(.2)
+        print('Ended administrative_event: {}'.format(message))
+    def handle_message(self, queue, bus, priority, message):
+        if bus == 'administrative-bus':
+            self.administrative_event(message.body)
+        else:
+            self.job_event(message.body)
+
+
+if __name__ == '__main__':
+    # Event buses
+    low_priority_job_bus = EventBus('low-priority-bus', priority=1)
+    high_priority_job_bus = EventBus('high-priority-bus', priority=5)
+    administrative_event_bus = EventBus('high-priority-bus', priority=10)
+    EventBus.register_buses([
+        low_priority_job_bus,
+        high_priority_job_bus,
+        administrative_event_bus
+    ])
+
+    # Queues
+    low_prioriy_queue = QueueConfig('low-priority-queue', low_priority_job_bus)
+    high_prioriy_queue = QueueConfig('high-priority-queue', administrative_event_bus)
+    admin_queue = QueueConfig('admin-queue', administrative_event_bus)
+
+    # Listener
+    my_listener = MyListener([low_priority_queue, high_priority_queue, admin_queue])
+    my_listener.listen()
+
+```
+
 Details
 -------
 
-### `SQSListenerConfig`
+### `EventBus`
 
-This object holds the configuration for a SQS queue to be subscribed and comes with the following parameters:
+An event bus is where the events messages will be put once retrieved by the listeners.
+Different queues listeners may put messages in the same bus if you wish to.
 
- - `queue_name` (string, mandatory): the AWS name of the queue
- - `priority_number` (integer, optional, defaults to `1`): defines the priority level of the events coming from this SQS queue (the higher, the more priority)
- - `bus_name` (string, optional, defaults to `'default-bus'`): defines the internal name of the event bus to which the SQS queue events will be forwarded (details below)
+The benefit of using multiple queues is to prioritize messages: each time a worker finishes a job, it starts looking at potential messages waiting in the buses ordered by their priority (highest first).
+
+Once instanciated, you have to register the buses using the `EventBus.register_buses` static method.
+
+Thus, the following default config defines only one bus, with the default name `'default-bus'`:
+
+```python
+from multi_sqs_listener import EventBus
+
+event_bus = EventBus()  # defaults: name='default-bus', priority=1
+EventBus.register_buses([event_bus])
+```
+
+But if you wish to elaborate a more advanced configuration with multiple priorities, you would need something like this:
+
+```python
+from multi_sqs_listener import EventBus
+
+low_priority_bus = EventBus('low-priority-bus', priority=1)
+medium_priority_bus = EventBus('medium-priority-bus', priority=2)
+high_priority_bus = EventBus('high-priority-bus', priority=3)
+EventBus.register_buses([low_priority_bus, medium_priority_bus, high_priority_bus])
+```
+
+Internally the `EventBus.register_buses` method not only registers them, but also sorts them so that any iteration will always start with the highest priority bus.
+
+### `QueueConfig`
+
+This object holds the configuration for a SQS queue to be subscribed.
+It refers to an SQS object and must indicate in which event bus messages from this SQS queue will be put.
+
+It comes with the following parameters:
+
+ - `queue_name` (string, mandatory): the AWS name of the queue, will be used to build the actual object.
+ - `bus` (`EventBus`, mandatory): incidates in which event bus messages coming from this SQS queue will be put
  - `queue_type` (string valued to `'long-poll'` or `'short-poll'`, optional, defaults to `'long-poll'`): defines the way the SQS queue will be polled by the listener thread (long or short polling -- details below).
+ - `region_name` (string, optional, defaults to `'eu-west-1'`): AWS region the SQS queue belongs to.
+ - `poll_interval` (integer, optional, defaults to `60`): polling interval, in seconds, in the case of short polling.
 
 ### `MultiSQSListener`
 
 This object is the main class for the package to instanciate all components.
 It's an abstract class that you're expected to derive by implementing the `handle_message` method that will be called when an event is coming in.
 
-Once you've implemented your custom version of the abstract class, you can instanciate it with the following parameters:
- - `queues_configuration` (list of `SQSListenerConfig`, mandatory): a list holding the configuration of the SQS queues to listen to
- - `logger` (`logging.Logger`, optional, defaults to `logging.getLogger(__name__)`): the logger that will be used to log the listener thread's internal events (typically `logging.DEBUG` messages) 
- - `poll_interval` (integer, optional, defaults to `60`): polling interval, in seconds, in the case of short polling (for now you have to use the same polling interval for all short polled queues)
- - `region_name` (string, optional, defaults to `'eu-west-1'`): AWS region your queues will belong to. Will be used by the `SQSListenerConfig` to refer to the actual AWS SQS queues objects.
+Once you've implemented your custom version of the abstract class, you can instanciate it with the following parameter:
+ - `queues_configuration` (list of `QueueConfig` objects, mandatory): a list holding the configuration of the SQS queues to listen to.
 
 ### Long vs short polling
 
@@ -161,24 +252,6 @@ Please also read this [very interesting article][4] about long vs short polling 
 [2]: https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-long-polling.html
 [3]: https://aws.amazon.com/sqs/faqs/?nc1=h_ls
 [4]: http://pragmaticnotes.com/2017/11/20/amazon-sqs-long-polling-versus-short-polling/
-
-### Event buses
-
-Internally, the `MultiSQSListener` component deals with multiple events and concurrent threads with thread safe Python `Queue.PriorityQueue` objects. This allows kind of inter threads communication, preventing a thread from retrieving messages from SQS while it's already working on a message with a higher priority (thus delaying their processing).
-
-
-Once retrieved from SQS, messages are put in `Queue.PriorityQueue` objects named *buses*, depending on the SQS origin (messages from multiple SQS queues may end up in the same bus); you won't really have to deal with buses except when instanciating `SQSListenerConfig` objects. You may only need to define a `bus_name` other than the default `'default-bus'` if you want to leverage them to route messages to differents handlers.
-
-Known issues and todos
-----------------------
-
-- In case of multiple events waiting in a high priority SQS, the listeners sometimes interleave low priority events in between when they come from long polled queues (which is not the purpose: all events with higher priority should be considered first ✌️). So, naming `H` events with high priority and `L` events with low priority, it sometimes happen to process: `L L L L H L H L H L H L H L L L L L` (considering a sequence of 5 `H`s arrives in the SQS while the fourth `L` is being processed). This behaviour is easy to simulate with one instance only, long polling a high- and a low-priority queue. It is more rare when there are multiple workers consuming messages from the queues, and fully disappears when the low-priority queue is short-polled
-
-- Currently the way priority is handled is not really satisfying. Would be worth investigating and refactoring it again. Please test it against your use case to validate empirically whether the current version fits your requirements.
-
-- Allow poll interval to be customized per queue.
-
-- Allow `region_name` to be defined per SQS queue (or to define the queues also by full URL instead of names).
 
 Authors
 -------

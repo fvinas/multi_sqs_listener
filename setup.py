@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+"""Package setup for multi_sqs_listener."""
+
 from setuptools import setup, find_packages
 
 setup(
@@ -11,8 +13,6 @@ setup(
     author_email='fabien.vinas@gmail.com',
     license='MIT',
     packages=find_packages(),
-    install_requires=[
-        'boto3'
-    ],
+    install_requires=[],
     zip_safe=False
 )
