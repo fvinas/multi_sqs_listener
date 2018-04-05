@@ -36,7 +36,7 @@ class MyListener(MultiSQSListener):
 my_event_bus = EventBus()  # leaving default name & priority
 EventBus.register_buses([my_event_bus])
 
-my_queue = QueueConfig('name-of-my-queue', my_event_bus)  # multiple default values used here
+my_queue = QueueConfig('low-priority-queue', my_event_bus)  # multiple default values used here
 my_listener = MyListener([my_queue])
 my_listener.listen()
 ```
@@ -87,9 +87,8 @@ low_priority_bus = EventBus('low-priority-bus', priority=1)
 high_priority_bus = EventBus('high-priority-bus', priority=5)
 EventBus.register_buses([low_priority_bus, high_priority_bus])
 
-
-low_prioriy_queue = QueueConfig('low-priority-queue', low_priority_bus)
-high_prioriy_queue = QueueConfig('high-priority-queue', high_priority_bus)
+low_priority_queue = QueueConfig('low-priority-queue', low_priority_bus)
+high_priority_queue = QueueConfig('high-priority-queue', high_priority_bus)
 my_listener = MyListener([low_priority_queue, high_priority_queue])
 my_listener.listen()
 ```
@@ -103,7 +102,7 @@ sqs = boto3.resource('sqs')
 low_q = sqs.get_queue_by_name(QueueName='low-priority-queue')
 high_q = sqs.get_queue_by_name(QueueName='high-priority-queue')
 
-for job_index in range(5):
+for job_index in range(100):
     low_q.send_message(MessageBody='Job #{} with no priority'.format(job_index))
 
 high_q.send_message(MessageBody='Priority message')
@@ -111,15 +110,16 @@ high_q.send_message(MessageBody='Priority message')
 ```
 
 You would get an output close to this one, highlighting the fact that "priority message" has been prioritized by the worker over messages with low priority.
+
 ```bash
 Starting low priority, long job: Job #0 with no priority
 Ended low priority job: Job #0 with no priority
+Starting high priority, quick job: Priority message
+Ended high priority job: Priority message
+Starting high priority, quick job: Priority message
+Ended high priority job: Priority message
 Starting low priority, long job: Job #4 with no priority
 Ended low priority job: Job #4 with no priority
-Starting high priority, quick job: Priority message
-Ended high priority job: Priority message
-Starting high priority, quick job: Priority message
-Ended high priority job: Priority message
 Starting low priority, long job: Job #1 with no priority
 Ended low priority job: Job #1 with no priority
 Starting low priority, long job: Job #2 with no priority
