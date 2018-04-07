@@ -25,6 +25,10 @@ Main features include:
  - creates a dedicated, synchronized thread for each SQS queue
  - deals with priorities
 
+`multi_sqs_listener` uses `boto3` for all AWS operations, so your AWS authentication is that of `boto3` (role, credentials, …).
+
+Tested with Python 2.7 and 3.6.
+
 Quick example
 -------------
 

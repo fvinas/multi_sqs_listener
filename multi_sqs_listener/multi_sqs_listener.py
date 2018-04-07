@@ -6,7 +6,7 @@
 import time
 import logging
 from threading import Event
-from Queue import Empty
+from queue import Empty
 from abc import ABCMeta, abstractmethod
 
 # Project

@@ -4,7 +4,7 @@
 
 # System
 import logging
-from Queue import Queue
+from queue import Queue
 from operator import attrgetter
 
 
