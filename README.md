@@ -35,13 +35,13 @@ from multi_sqs_listener import QueueConfig, EventBus, MultiSQSListener
 
 class MyListener(MultiSQSListener):
     def handle_message(self, queue, bus, priority, message):
-        # This is were your actual event code would be
+        # This is where your actual event handler code would site
         print(message.body)
 
 my_event_bus = EventBus()  # leaving default name & priority
 EventBus.register_buses([my_event_bus])
 
-my_queue = QueueConfig('low-priority-queue', my_event_bus)  # multiple default values used here
+my_queue = QueueConfig('my-queue', my_event_bus)  # multiple default values here
 my_listener = MyListener([my_queue])
 my_listener.listen()
 ```
