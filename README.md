@@ -33,6 +33,10 @@ Tested with Python 2.7 and 3.6.
 Quick example
 -------------
 
+```bash
+pip install multi_sqs_listener
+```
+
 Here a very simple example of a worker waiting for messages coming from one SQS queue:
 
 ```python
