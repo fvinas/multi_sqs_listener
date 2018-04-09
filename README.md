@@ -4,9 +4,9 @@ multi_sqs_listener
 A Python package to listen in parallel to events coming from multiple AWS SQS queues
 
 
-![Packagist](https://img.shields.io/packagist/l/doctrine/orm.svg)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 [![PyPI](https://img.shields.io/badge/PyPI-1.0.1-brightgreen.svg)](https://pypi.org/project/multi_sqs_listener/1.0.1/)
-![](https://img.shields.io/badge/Python-2.7%2C%203.6-brightgreen.svg)
+![Tested with Python 2.7 & 3.6](https://img.shields.io/badge/Python-2.7%2C%203.6-brightgreen.svg)
 
 
 Getting started
