@@ -28,12 +28,13 @@ class _ShortPollSQSListener(Thread):
         Thread.__init__(self, name=queue_name)
         self.thread_id = thread_id
         self._region_name = kwargs['region_name'] if 'region_name' in kwargs else 'eu-west-1'
+        self._queue_acct_id = kwargs.get('queue_acct_id')
         self._outbound_bus = outbound_bus
         self._queue_name = queue_name
         self._poll_interval = poll_interval
         self._handler_available_event = handler_available_event
         sqs = boto3.resource('sqs', region_name=self._region_name)
-        self._queue = sqs.get_queue_by_name(QueueName=self._queue_name)
+        self._queue = sqs.get_queue_by_name(QueueName=self._queue_name, QueueOwnerAWSAccountId=self._queue_acct_id)
         self._run_event = run_event
 
         logger.debug('Starting up thread {} and short-polling inbound queue {}'.format(
