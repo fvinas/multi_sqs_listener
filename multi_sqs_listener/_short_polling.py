@@ -34,7 +34,11 @@ class _ShortPollSQSListener(Thread):
         self._poll_interval = poll_interval
         self._handler_available_event = handler_available_event
         sqs = boto3.resource('sqs', region_name=self._region_name)
-        self._queue = sqs.get_queue_by_name(QueueName=self._queue_name, QueueOwnerAWSAccountId=self._queue_acct_id)
+        if self._queue_acct_id is not None:
+            self._queue = sqs.get_queue_by_name(QueueName=self._queue_name, QueueOwnerAWSAccountId=self._queue_acct_id)
+        else:
+            self._queue = sqs.get_queue_by_name(QueueName=self._queue_name)
+
         self._run_event = run_event
 
         logger.debug('Starting up thread {} and short-polling inbound queue {}'.format(
